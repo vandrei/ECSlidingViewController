@@ -46,6 +46,14 @@
                 topViewPosition:(ECSlidingViewControllerTopViewPosition)topViewPosition;
 @end
 
+@protocol ECSlidingPinnedControllerDelegate <NSObject>
+
+@optional
+- (BOOL)hasPinnedLeftViewController;
+- (BOOL)hasPinnedRightViewController;
+
+@end
+
 /**
  The `ECSlidingViewControllerDelegate` protocol is adopted by an object that may customize a sliding view controller's animation transition, interactive transition, or the layout of the child views.
  */
@@ -193,6 +201,8 @@
  */
 @property (nonatomic, assign) CGFloat anchorRightRevealAmount;
 
+@property (nonatomic, assign) CGFloat anchorLeftRevealAmountiPad;
+
 
 ///---------------------------
 /// @name Moving the Top Layer
@@ -242,6 +252,8 @@
  @param complete A completion handler.
  */
 - (void)resetTopViewAnimated:(BOOL)animated onComplete:(void(^)())complete;
+
+- (void)topViewControllerWillAppear;
 
 
 ///--------------------------------------

@@ -107,8 +107,13 @@
 - (void)setup {
     self.anchorLeftPeekAmount    = 44;
     self.anchorRightRevealAmount = 276;
-    _currentTopViewPosition = ECSlidingViewControllerTopViewPositionCentered;
     self.transitionInProgress = NO;
+    
+    if ([self isLeftViewPinned]) {
+        _currentTopViewPosition = ECSlidingViewControllerTopViewPositionAnchoredRight;
+    } else {
+        _currentTopViewPosition = ECSlidingViewControllerTopViewPositionCentered;
+    }
 }
 
 #pragma mark - UIViewController
@@ -428,7 +433,9 @@
 }
 
 - (void)resetTopViewAnimated:(BOOL)animated {
-    [self resetTopViewAnimated:animated onComplete:nil];
+    if (![self isLeftViewPinned]) {
+        [self resetTopViewAnimated:animated onComplete:nil];
+    }
 }
 
 - (void)anchorTopViewToRightAnimated:(BOOL)animated onComplete:(void (^)())complete {
@@ -444,6 +451,33 @@
 }
 
 #pragma mark - Private
+
+- (BOOL)isIpad {
+    return UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad;
+}
+
+- (BOOL)isLandscape {
+    UIDeviceOrientation deviceOrientation = [[UIDevice currentDevice] orientation];
+    
+    return UIDeviceOrientationIsLandscape(deviceOrientation);
+}
+
+- (BOOL)isLeftViewPinned {
+    UIViewController *topController;
+    if ([self.topViewController isKindOfClass: UINavigationController.class]) {
+        topController = ((UINavigationController *)self.topViewController).viewControllers.lastObject;
+    } else {
+        topController = self.topViewController;
+    }
+    
+    if ([topController respondsToSelector:@selector(hasPinnedLeftViewController)]) {
+        NSObject <ECSlidingPinnedControllerDelegate> *pinnedControllerDelegate = (NSObject <ECSlidingPinnedControllerDelegate> *)topController;
+
+        return [self isIpad] && [self isLandscape] && [pinnedControllerDelegate hasPinnedLeftViewController];
+    }
+    
+    return false;
+}
 
 - (void)moveTopViewToPosition:(ECSlidingViewControllerTopViewPosition)position animated:(BOOL)animated onComplete:(void(^)())complete {
     self.isAnimated = animated;
@@ -473,16 +507,27 @@
     
     switch(position) {
         case ECSlidingViewControllerTopViewPositionCentered:
-            return containerViewFrame;
+            break;
+            
         case ECSlidingViewControllerTopViewPositionAnchoredLeft:
             containerViewFrame.origin.x = -self.anchorLeftRevealAmount;
-            return containerViewFrame;
+            break;
+            
         case ECSlidingViewControllerTopViewPositionAnchoredRight:
-            containerViewFrame.origin.x = self.anchorRightRevealAmount;
-            return containerViewFrame;
+            if ([self isLeftViewPinned]) {
+                containerViewFrame.origin.x = self.anchorLeftRevealAmountiPad;
+                containerViewFrame.size.width -= self.anchorLeftRevealAmountiPad;
+            } else {
+                containerViewFrame.origin.x = self.anchorRightRevealAmount;
+            }
+            
+            break;
+            
         default:
             return CGRectZero;
     }
+    
+    return containerViewFrame;
 }
 
 - (CGRect)underLeftViewCalculatedFrameForTopViewPosition:(ECSlidingViewControllerTopViewPosition)position {
@@ -695,7 +740,11 @@
 
     if (topViewIsAnchored) {
         if (self.topViewAnchoredGesture & ECSlidingViewControllerAnchoredGestureDisabled) {
-            topView.userInteractionEnabled = NO;
+            if ([self isLeftViewPinned]) {
+                topView.userInteractionEnabled = YES;
+            } else {
+                topView.userInteractionEnabled = NO;
+            }
         } else {
             self.gestureView.frame = topView.frame;
 
@@ -703,14 +752,19 @@
                 ![self.customAnchoredGesturesViewMap objectForKey:self.panGesture]) {
                 [self.customAnchoredGesturesViewMap setObject:self.panGesture.view forKey:self.panGesture];
                 [self.panGesture.view removeGestureRecognizer:self.panGesture];
-                [self.gestureView addGestureRecognizer:self.panGesture];
-                if (!self.gestureView.superview) [self.view insertSubview:self.gestureView aboveSubview:topView];
+                
+                if (![self isLeftViewPinned]) {
+                    [self.gestureView addGestureRecognizer:self.panGesture];
+                    if (!self.gestureView.superview) [self.view insertSubview:self.gestureView aboveSubview:topView];
+                }
             }
 
             if (self.topViewAnchoredGesture & ECSlidingViewControllerAnchoredGestureTapping &&
                 ![self.customAnchoredGesturesViewMap objectForKey:self.resetTapGesture]) {
-                [self.gestureView addGestureRecognizer:self.resetTapGesture];
-                if (!self.gestureView.superview) [self.view insertSubview:self.gestureView aboveSubview:topView];
+                if (![self isLeftViewPinned]) {
+                    [self.gestureView addGestureRecognizer:self.resetTapGesture];
+                    if (!self.gestureView.superview) [self.view insertSubview:self.gestureView aboveSubview:topView];
+                }
             }
             
             if (self.topViewAnchoredGesture & ECSlidingViewControllerAnchoredGestureCustom) {
@@ -718,10 +772,15 @@
                     if (![self.customAnchoredGesturesViewMap objectForKey:gesture]) {
                         [self.customAnchoredGesturesViewMap setObject:gesture.view forKey:gesture];
                         [gesture.view removeGestureRecognizer:gesture];
-                        [self.gestureView addGestureRecognizer:gesture];
+                        if (![self isLeftViewPinned]) {
+                            [self.gestureView addGestureRecognizer:self.panGesture];
+                        }
                     }
                 }
-                if (!self.gestureView.superview) [self.view insertSubview:self.gestureView aboveSubview:topView];
+                
+                if (![self isLeftViewPinned]) {
+                    if (!self.gestureView.superview) [self.view insertSubview:self.gestureView aboveSubview:topView];
+                }
             }
         }
     } else {
@@ -730,13 +789,17 @@
         for (UIGestureRecognizer *gesture in self.customAnchoredGestures) {
             UIView *originalView = [self.customAnchoredGesturesViewMap objectForKey:gesture];
             if ([originalView isDescendantOfView:self.topViewController.view]) {
-                [originalView addGestureRecognizer:gesture];
+                if (![self isLeftViewPinned]) {
+                    [self.gestureView addGestureRecognizer:self.panGesture];
+                }
             }
         }
         if ([self.customAnchoredGesturesViewMap objectForKey:self.panGesture]) {
             UIView *view = [self.customAnchoredGesturesViewMap objectForKey:self.panGesture];
             if ([view isDescendantOfView:self.topViewController.view]) {
-                [view addGestureRecognizer:self.panGesture];
+                if (![self isLeftViewPinned]) {
+                    [self.gestureView addGestureRecognizer:self.panGesture];
+                }
             }
         }
         [self.customAnchoredGesturesViewMap removeAllObjects];
@@ -746,6 +809,10 @@
 #pragma mark - UIPanGestureRecognizer action
 
 - (void)detectPanGestureRecognizer:(UIPanGestureRecognizer *)recognizer {
+    if ([self isLeftViewPinned]) {
+        return;
+    }
+    
     if (recognizer.state == UIGestureRecognizerStateBegan) {
         [self.view endEditing:YES];
         _isInteractive = YES;
@@ -940,6 +1007,27 @@
 
 - (void)notifyWhenInteractionEndsUsingBlock:(void(^)(id<UIViewControllerTransitionCoordinatorContext>context))handler {
     self.coordinatorInteractionEnded = handler;
+}
+
+
+#pragma mark - TESTING Landscape SHIT
+
+- (void)pinLeftMenuIfNecessary {
+    if ([self isLeftViewPinned]) {
+        [self anchorTopViewToRightAnimated:false];
+    } else {
+        [self resetTopViewAnimated:false];
+    }
+}
+
+- (void)topViewControllerWillAppear {
+    [self pinLeftMenuIfNecessary];
+}
+
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+    
+    [self pinLeftMenuIfNecessary];
 }
 
 @end
